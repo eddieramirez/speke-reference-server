@@ -75,6 +75,7 @@ class ServerResponseBuilder:
         self.document_key = None
         self.hmac_key = None
         self.public_key = None
+        self.init_vector = None
         self.use_playready_content_key = False
         element_tree.register_namespace("cpix", "urn:dashif:org:cpix")
         element_tree.register_namespace("pskc", "urn:ietf:params:xml:ns:keyprov:pskc")
@@ -188,6 +189,13 @@ class ServerResponseBuilder:
         else:
             print("CLEAR-RESPONSE")
 
+        for content_key in self.root.findall("./{urn:dashif:org:cpix}ContentKeyList/{urn:dashif:org:cpix}ContentKey"):
+            kid = content_key.get("kid")
+            self.init_vector = content_key.get("explicitIV")
+            if self.init_vector is None and system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid:
+                self.init_vector = base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8')
+                content_key.set('explicitIV', self.init_vector)
+
         for drm_system in self.root.findall("./{urn:dashif:org:cpix}DRMSystemList/{urn:dashif:org:cpix}DRMSystem"):
             kid = drm_system.get("kid")
             system_id = drm_system.get("systemId")
@@ -197,12 +205,13 @@ class ServerResponseBuilder:
 
         for content_key in self.root.findall("./{urn:dashif:org:cpix}ContentKeyList/{urn:dashif:org:cpix}ContentKey"):
             kid = content_key.get("kid")
-            init_vector = content_key.get("explicitIV")
+            self.init_vector = content_key.get("explicitIV")
             data = element_tree.SubElement(content_key, "{urn:dashif:org:cpix}Data")
             secret = element_tree.SubElement(data, "{urn:ietf:params:xml:ns:keyprov:pskc}Secret")
             # HLS SAMPLE AES Only
-            if init_vector is None and system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid:
-                content_key.set('explicitIV', base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8'))
+            if self.init_vector is None and system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid:
+                self.init_vector = base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8')
+                content_key.set('explicitIV', self.init_vector)
             # generate the key
             key_bytes = self.generator.key(content_id, kid)
             # store to the key in the cache
@@ -317,18 +326,31 @@ class ServerResponseBuilderV2(ServerResponseBuilder):
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}ContentProtectionData")
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}PSSH")
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}SmoothStreamingProtectionHeaderData")
+            ext_x_key_uri = self.cache.url(content_id, kid)
+            method = "SAMPLE-AES"
+            key_format = HLS_SAMPLE_AES_KEY_FORMAT
+            key_format_versions = HLS_SAMPLE_AES_KEY_FORMAT_VERSIONS
+            init_vector = None
+            if HLS_SAMPLE_AES_KEY_FORMAT == 'identity':
+                init_vector = hex(int.from_bytes(base64.b64decode(self.init_vector), byteorder="big"))
+
+            ext_x_session_key, ext_x_key = self.clearkey_hls_signaling_data(ext_x_key_uri, method, key_format, key_format_versions, init_vector)
+
             hls_signalling_data_elems = drm_system.findall("{urn:dashif:org:cpix}HLSSignalingData")
             if hls_signalling_data_elems:
-                drm_system.find("{urn:dashif:org:cpix}HLSSignalingData[@playlist='media']").text = FAIRPLAY_HLS_SIGNALING_DATA_MEDIA
-                drm_system.find("{urn:dashif:org:cpix}HLSSignalingData[@playlist='master']").text = FAIRPLAY_HLS_SIGNALING_DATA_MASTER
+                drm_system.find("{urn:dashif:org:cpix}HLSSignalingData[@playlist='media']").text = ext_x_key
+                drm_system.find("{urn:dashif:org:cpix}HLSSignalingData[@playlist='master']").text = ext_x_session_key
 
         elif system_id.lower() == CLEAR_KEY_AES_128_SYSTEM_ID.lower():
-            ext_x_key_uri = self.cache.url(content_id, kid)
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}ContentProtectionData")
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}PSSH")
             self.safe_remove(drm_system, "{urn:dashif:org:cpix}SmoothStreamingProtectionHeaderData")
+            ext_x_key_uri = self.cache.url(content_id, kid)
+            method = "AES-128"
+            key_format = HLS_AES_128_KEY_FORMAT
+            key_format_versions = HLS_AES_128_KEY_FORMAT_VERSIONS
 
-            ext_x_session_key, ext_x_key = self.clearkey_aes_128_hls_signaling_data(ext_x_key_uri)
+            ext_x_session_key, ext_x_key = self.clearkey_hls_signaling_data(ext_x_key_uri, method, key_format, key_format_versions)
 
             hls_signalling_data_elems = drm_system.findall("{urn:dashif:org:cpix}HLSSignalingData")
             if hls_signalling_data_elems:
@@ -356,15 +378,14 @@ class ServerResponseBuilderV2(ServerResponseBuilder):
             "body": element_tree.tostring(self.root).decode('utf-8')
         }
 
-    def clearkey_aes_128_hls_signaling_data(self, ext_x_key_uri):
-        method = "AES-128"
-        uri = ext_x_key_uri
-        key_format = HLS_AES_128_KEY_FORMAT
-        key_format_versions = HLS_AES_128_KEY_FORMAT_VERSIONS
-
+    def clearkey_hls_signaling_data(self, uri, method, key_format, key_format_versions, init_vector=None):
         # need to fix
         ext_x_session_key = '#EXT-X-SESSION-KEY:METHOD={},URI="{}",KEYFORMAT="{}",KEYFORMATVERSIONS="{}"'.format(method, uri, key_format, key_format_versions)
         ext_x_key = '#EXT-X-KEY:METHOD={},URI="{}",KEYFORMAT="{}",KEYFORMATVERSIONS="{}"'.format(method, uri, key_format, key_format_versions)
+        if init_vector is not None:
+            ext_x_session_key = '{},IV={}'.format(ext_x_session_key, init_vector)
+            ext_x_key = '{},IV={}'.format(ext_x_key, init_vector)
+              
 
         encoded_session_key = base64.b64encode(ext_x_session_key.encode('utf-8')).decode('utf-8')
         encoded_key = base64.b64encode(ext_x_key.encode('utf-8')).decode('utf-8')
