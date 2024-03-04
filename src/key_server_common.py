@@ -34,9 +34,6 @@ HLS_AES_128_KEY_FORMAT = ''  # 'identity'
 HLS_AES_128_KEY_FORMAT_VERSIONS = '1'  # '1'
 HLS_SAMPLE_AES_KEY_FORMAT = 'com.apple.streamingkeydelivery'
 HLS_SAMPLE_AES_KEY_FORMAT_VERSIONS = '1'
-# speke v2.0 settings for fairplay drm
-FAIRPLAY_HLS_SIGNALING_DATA_MEDIA = os.environ["FAIRPLAY_HLS_SIGNALING_DATA_MEDIA"]
-FAIRPLAY_HLS_SIGNALING_DATA_MASTER = os.environ["FAIRPLAY_HLS_SIGNALING_DATA_MASTER"]
 
 # settings for widevine drm
 WIDEVINE_PSSH_BOX = os.environ["WIDEVINE_PSSH_BOX"]
