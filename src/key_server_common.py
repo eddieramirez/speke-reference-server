@@ -327,9 +327,7 @@ class ServerResponseBuilderV2(ServerResponseBuilder):
             method = "SAMPLE-AES"
             key_format = HLS_SAMPLE_AES_KEY_FORMAT
             key_format_versions = HLS_SAMPLE_AES_KEY_FORMAT_VERSIONS
-            init_vector = None
-            if HLS_SAMPLE_AES_KEY_FORMAT == 'identity':
-                init_vector = hex(int.from_bytes(base64.b64decode(self.init_vector), byteorder="big"))
+            init_vector = hex(int.from_bytes(base64.b64decode(self.init_vector), byteorder="big"))
 
             ext_x_session_key, ext_x_key = self.clearkey_hls_signaling_data(ext_x_key_uri, method, key_format, key_format_versions, init_vector)
 
