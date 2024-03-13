@@ -187,28 +187,25 @@ class ServerResponseBuilder:
             print("CLEAR-RESPONSE")
 
         for content_key in self.root.findall("./{urn:dashif:org:cpix}ContentKeyList/{urn:dashif:org:cpix}ContentKey"):
-            kid = content_key.get("kid")
             self.init_vector = content_key.get("explicitIV")
-            # HLS SAMPLE AES and AES 128 Only
-            if self.init_vector is None and (system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid or system_ids.get(HLS_AES_128_SYSTEM_ID, False) == kid):
-                self.init_vector = base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8')
-                content_key.set('explicitIV', self.init_vector)
 
         for drm_system in self.root.findall("./{urn:dashif:org:cpix}DRMSystemList/{urn:dashif:org:cpix}DRMSystem"):
             kid = drm_system.get("kid")
             system_id = drm_system.get("systemId")
             system_ids[system_id] = kid
+            # HLS SAMPLE AES and AES 128 Only
+            if self.init_vector is None and (system_id == HLS_SAMPLE_AES_SYSTEM_ID or system_id == CLEAR_KEY_AES_128_SYSTEM_ID):
+                self.init_vector = base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8')
             print("SYSTEM-ID {}".format(system_id.lower()))
             self.fixup_document(drm_system, system_id, content_id, kid)
 
         for content_key in self.root.findall("./{urn:dashif:org:cpix}ContentKeyList/{urn:dashif:org:cpix}ContentKey"):
             kid = content_key.get("kid")
-            self.init_vector = content_key.get("explicitIV")
+            init_vector = content_key.get("explicitIV")
             data = element_tree.SubElement(content_key, "{urn:dashif:org:cpix}Data")
             secret = element_tree.SubElement(data, "{urn:ietf:params:xml:ns:keyprov:pskc}Secret")
             # HLS SAMPLE AES and AES 128 Only
-            if self.init_vector is None and (system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid or system_ids.get(HLS_AES_128_SYSTEM_ID, False) == kid):
-                self.init_vector = base64.b64encode(self.generator.key(content_id, kid)).decode('utf-8')
+            if init_vector is None and (system_ids.get(HLS_SAMPLE_AES_SYSTEM_ID, False) == kid or system_ids.get(CLEAR_KEY_AES_128_SYSTEM_ID, False) == kid):
                 content_key.set('explicitIV', self.init_vector)
             # generate the key
             key_bytes = self.generator.key(content_id, kid)
